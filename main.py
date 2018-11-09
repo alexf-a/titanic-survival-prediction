@@ -1,7 +1,10 @@
+import math
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
+from collections import Counter
 
 #Load in the data
 data_train = pd.read_csv('data/train.csv')
@@ -10,6 +13,7 @@ data_test = pd.read_csv('data/test.csv')
 
 
 #Have a quick peek to identify obvious trends in data dirtiness...
+print(data_train["Name"])
 print(data_train.describe())
 print(data_train.head(20))
 print(data_train.isnull().sum()) ##This indicates Age and Cabin are particularly bad offenders
@@ -51,12 +55,44 @@ def normalize(df):
         #Set the data-frame column to the normalized values
         df[feat] = normalized
 
-##Drop irrelevant columns
-data_train.drop(columns=["Cabin", "Ticket"])
-data_test.drop(columns=["Cabin", "Ticket"])
+def add_deck(df):
+    '''Add Deck feature, derived from Cabin feature.'''
+    decks = df["Cabin"].values()
+    #Convert NaNs to NA
+    decks[math.isnan(decks)] = "NA"
+    #Take the most common cabin in each passenger's purchased set of cabins
+    decks = np.array([Counter([deck[0] for deck in deck_set.split(" ")]).most_common(1)[0][0] for deck_set in decks])
+    #Assign new array to datafram
+    df = df.assign(Deck=decks)
+
+def _parse_title(name):
+    for s in name.split(" "):
+        if s[len(s) - 1] == ".":
+            return s
+    return "NA"
+
+
+def add_title(df):
+    '''Add Title feature, derived from Name feature'''
+    titles = np.array([_parse_title(name) for name in df["Name"].values()])
+    df.assign(Title=titles)
+
 ##Replace NaN's and normalize
 replace_nan(data_train)
 replace_nan(data_test)
 normalize(data_train)
 normalize(data_test)
+
+#Add Deck derived feature
+add_deck(data_train)
+add_deck(data_test)
+
+#Add Title derived feature
+add_title(data_train)
+add_title(data_test)
+
+##Drop irrelevant columns
+data_train.drop(columns=["Cabin", "Ticket"])
+data_test.drop(columns=["Cabin", "Ticket"])
+
 
