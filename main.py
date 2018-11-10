@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from collections import Counter
 
 #Load in the data
@@ -13,7 +14,6 @@ data_test = pd.read_csv('data/test.csv')
 
 
 #Have a quick peek to identify obvious trends in data dirtiness...
-print(data_train["Name"])
 print(data_train.describe())
 print(data_train.head(20))
 print(data_train.isnull().sum()) ##This indicates Age and Cabin are particularly bad offenders
@@ -42,28 +42,40 @@ def replace_nan(df):
      '''
     df["Age"].fillna(df["Age"].mean(), inplace=True)
     df["Embarked"].fillna(df["Embarked"].mode(), inplace=True)
-    df["Fare"].fillna(df["fare"].mean(), inplace=True)
+    df["Fare"].fillna(df["Fare"].mean(), inplace=True)
+
+def replace_incorrect(df):
+    '''Replace incorrect values with column mode in dataframe df columns with incorrect categorical values. '''
+    other = np.full(df.shape[0], df["Embarked"].mode())
+    emb = df["Embarked"]
+    emb.where((emb == "S") | (emb == "Q") | (emb == "C"), other=other, inplace=True)
 
 def normalize(df):
     '''Normalized all numerical features to the [0, 1] range. '''
-    normalizer = preprocessing.MinMaxScaler
-    for feat in ["Pclass", "Age", "Sibsp", "Parch", "Fare"]:
+    normalizer = preprocessing.MinMaxScaler()
+    for feat in ["Pclass", "Age", "SibSp", "Parch", "Fare"]:
         #Convery the relevant column to a numpy array
         v = df[[feat]].values.astype(float)
         #Normalize
-        normalized = normalizer.fit_transform(v)
+        normalized = normalizer.fit_transform(X=v)
         #Set the data-frame column to the normalized values
         df[feat] = normalized
 
 def add_deck(df):
     '''Add Deck feature, derived from Cabin feature.'''
-    decks = df["Cabin"].values()
-    #Convert NaNs to NA
-    decks[math.isnan(decks)] = "NA"
-    #Take the most common cabin in each passenger's purchased set of cabins
-    decks = np.array([Counter([deck[0] for deck in deck_set.split(" ")]).most_common(1)[0][0] for deck_set in decks])
+    #Convert Cabin NaN to NA
+    df["Cabin"].fillna("NA", inplace=True)
+    #Start the Deck column out with the Cabin values
+    decks = df["Cabin"].values
+    #Replace each set of cabins with the most common deck
+    for i in range(len(decks)):
+        if decks[i] == "NA":
+            continue
+        else:
+            decks[i] = Counter([cab[0] for cab in decks[i].split(" ")]).most_common(1)[0][0]
+
     #Assign new array to datafram
-    df = df.assign(Deck=decks)
+    df["Deck"] = decks
 
 def _parse_title(name):
     for s in name.split(" "):
@@ -74,12 +86,21 @@ def _parse_title(name):
 
 def add_title(df):
     '''Add Title feature, derived from Name feature'''
-    titles = np.array([_parse_title(name) for name in df["Name"].values()])
-    df.assign(Title=titles)
+    titles = np.array([_parse_title(name) for name in df["Name"].values])
+    df["Title"] = titles
 
-##Replace NaN's and normalize
+
+def encode_numeric(df):
+    '''Encode string-valued columns as numbers.'''
+    number = preprocessing.LabelEncoder()
+    for col in ["Name", "Title", "Sex", "Deck", "Embarked"]:
+        df[col] = number.fit_transform(df[col])
+
+##Replace NaN's and incorrect values, and normalize
 replace_nan(data_train)
 replace_nan(data_test)
+replace_incorrect(data_train)
+replace_incorrect(data_test)
 normalize(data_train)
 normalize(data_test)
 
@@ -92,7 +113,28 @@ add_title(data_train)
 add_title(data_test)
 
 ##Drop irrelevant columns
-data_train.drop(columns=["Cabin", "Ticket"])
-data_test.drop(columns=["Cabin", "Ticket"])
+data_train.drop(axis=1, labels=["Cabin", "Ticket"], inplace=True)
+data_test.drop(axis=1, labels=["Cabin", "Ticket"], inplace=True)
+
+#Label encoding of strings into numeric classes
+encode_numeric(data_train)
+encode_numeric(data_test)
+
+#Split data into train and test (this is personal testing,
+    #Kaggle has given us a testing data-set without labels)
+y_train = data_train["Survived"].ravel()
+print(y_train.shape)
+data_train.drop(axis=1, labels=["Survived"], inplace=True)
+X_trn, X_tst, y_trn, y_tst = train_test_split(data_train.values
+                                              ,y_train
+                                              , test_size=0.33)
 
 
+
+#Create and fit a model
+logr = LogisticRegression()
+logr.fit(X_trn, y_trn)
+
+#Test
+print("TEST RESULTS: ")
+print(logr.score(X_tst, y_tst))
